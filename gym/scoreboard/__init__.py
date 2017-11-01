@@ -1192,3 +1192,4 @@ The robot model was originally created by Tassa et al. [Tassa12]_.
 )
 
 registry.finalize()
+

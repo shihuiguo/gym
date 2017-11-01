@@ -1,7 +1,7 @@
 OpenAI Gym
 **********
 
-**OpenAI Gym is a toolkit for developing and comparing reinforcement learning algorithms.** This is the ``gym`` open-source library, which gives you access to an ever-growing variety of environments.
+**OpenAI Gym is a toolkit for developing and comparing reinforcement learning algorithms.** This is the ``gym`` open-source library, which gives you access to a standardized set of environments. (A static export of the old accompanying gym website can be found at https://gym.openai.com/read-only.html.)
 
 .. image:: https://travis-ci.org/openai/gym.svg?branch=master
     :target: https://travis-ci.org/openai/gym
@@ -242,10 +242,9 @@ Examples
 
 See the ``examples`` directory.
 
-- Run `examples/agents/random_agent.py <https://github.com/openai/gym/blob/master/examples/agents/random_agent.py>`_ to run an simple random agent and upload the results to the scoreboard.
-- Run `examples/agents/cem.py <https://github.com/openai/gym/blob/master/examples/agents/cem.py>`_ to run an actual learning agent (using the cross-entropy method) and upload the results to the scoreboard.
+- Run `examples/agents/random_agent.py <https://github.com/openai/gym/blob/master/examples/agents/random_agent.py>`_ to run an simple random agent.
+- Run `examples/agents/cem.py <https://github.com/openai/gym/blob/master/examples/agents/cem.py>`_ to run an actual learning agent (using the cross-entropy method).
 - Run `examples/scripts/list_envs <https://github.com/openai/gym/blob/master/examples/scripts/list_envs>`_ to generate a list of all environments. (You see also just `browse <https://gym.openai.com/docs>`_ the list on our site.
-- Run `examples/scripts/upload <https://github.com/openai/gym/blob/master/examples/scripts/upload>`_ to upload the recorded output from ``random_agent.py`` or ``cem.py``. Make sure to obtain an `API key <https://gym.openai.com/settings/profile>`_.
 
 Testing
 =======
