@@ -273,6 +273,13 @@ register(
 )
 
 register(
+    id='Walker2d-v2',
+    max_episode_steps=1000,
+    entry_point='gym.envs.mujoco:Walker2dNewEnv',
+)
+
+
+register(
     id='Ant-v1',
     entry_point='gym.envs.mujoco:AntEnv',
     max_episode_steps=1000,

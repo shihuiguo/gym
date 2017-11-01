@@ -443,6 +443,24 @@ The robot model is based on work by Erez, Tassa, and Todorov [Erez11]_.
 
 
 add_task(
+    id='Walker2d-v2',
+    summary="Make a 2D robot walk.",
+    group='mujoco',
+    description="""\
+Make a two-dimensional bipedal robot walk forward at different speeds
+""",
+    background="""\
+Shihui Guo
+
+The robot model is based on work by Erez, Tassa, and Todorov [Erez11]_.
+
+.. [Erez11] T Erez, Y Tassa, E Todorov, "Infinite Horizon Model Predictive Control for Nonlinear Periodic Tasks", 2011.
+
+""",
+)
+
+
+add_task(
     id='Ant-v1',
     group='mujoco',
     summary="Make a 3D four-legged robot walk.",
