@@ -4,8 +4,10 @@ from gym.envs.mujoco import mujoco_env
 
 foot_traj_filepath = '/home/caffe/Documents/baselines/baselines/ddpg/data/walker2d_foot_traj_xz.txt'
 foot_traj = np.loadtxt(foot_traj_filepath)
-body_height = 1.25
+leg_len = 0.95
+body_height = [0.9, 1.2]
 cycle_time = 1.0
+speed = 2 # the average speed from the mocap data is 1.39
 
 class Walker2dNewEnv(mujoco_env.MujocoEnv, utils.EzPickle):
 
@@ -20,7 +22,7 @@ class Walker2dNewEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         lfoot_reward = self.update_foot_info(True)
         rfoot_reward = self.update_foot_info(False)
         alive_bonus = 1.0
-        # reward_vel = -((posafter - posbefore) / self.dt - 2)**2
+        #reward_vel = -((posafter - posbefore) / self.dt - speed)**2
         reward_vel = (posafter - posbefore)/self.dt
         reward_alive = alive_bonus
         reward_act = -1e-3 * np.square(a).sum()
@@ -35,7 +37,7 @@ class Walker2dNewEnv(mujoco_env.MujocoEnv, utils.EzPickle):
                     ang > -1.0 and ang < 1.0)
             
         ob = self._get_obs()
-        return ob, reward, done, {}
+        return ob, reward, done, {'reward_foot':reward_foot}
     
     def check_foot_strike(self, left, threshold=0.2):
         if left:
@@ -59,64 +61,51 @@ class Walker2dNewEnv(mujoco_env.MujocoEnv, utils.EzPickle):
     
     def init_foot_contact(self, left):
         if left:
-            self.lfoot_info = {'stance': True,
-                               'start_t': self.model.data.time-cycle_time/4,
-                               't_lift': None,
-                               'xpos': self.model.data.xpos[4, 0]}
+            self.lfoot_info = {'start_t': self.model.data.time-cycle_time/4*3}
         else:
-            self.rfoot_info = {'stance': True,
-                               'start_t': self.model.data.time-cycle_time/4*3,
-                               'xpos': self.model.data.xpos[7, 0]}            
+            self.rfoot_info = {'start_t': self.model.data.time-cycle_time/4}            
     
     def update_foot_info(self, left):
         reward = 0
         if left:
             if hasattr(self, 'lfoot_info'):
-                if self.lfoot_info['stance']:
-                    if self.check_foot_liftoff(left):
-                        self.lfoot_info['stance'] = False
-                        self.lfoot_info['t_lift'] = self.model.data.time
-                else: 
-                    if self.check_foot_strike(left):
-                        self.init_foot_contact(left) 
-                    else:
-                        self.lfoot_info['xpos'] = self.model.data.xpos[4, 0]
                 reward = self.compute_foot_reward(left)
             else:
                 self.init_foot_contact(left)
         else:
             if hasattr(self, 'rfoot_info'):
-                if self.rfoot_info['stance']:
-                    if self.check_foot_liftoff(left):
-                        self.rfoot_info['stance'] = False
-                        self.rfoot_info['t_lift'] = self.model.data.time
-                else:
-                    if self.check_foot_strike(left):                        
-                        self.init_foot_contact(left)
-                    else:
-                        self.rfoot_info['xpos'] = self.model.data.xpos[7, 0]
                 reward = self.compute_foot_reward(left)                                  
             else:
                 self.init_foot_contact(left)
-        return reward   
+        return reward
+    
+
     
     def compute_foot_reward(self, left, stride=0.6):
         # compare the foot trajectory with respect to the desired foot trajectory
-        com_xpos = np.array([self.model.data.xpos[1, 0], self.model.data.xpos[1, 2]])            
+        hip_pos = np.array([self.model.data.xanchor[2, 0], self.model.data.xanchor[2, 2]])            
         if left:
-            current_pos = np.array([self.model.data.xpos[4, 0], self.model.data.xpos[4, 2]])
-            foot_to_com = (com_xpos - current_pos)/body_height
-            timing = (self.model.data.time - self.lfoot_info['t_touch'])/cycle_time
+            ankle_pos = np.array([self.model.data.xanchor[5, 0], self.model.data.xpos[5, 2]])
+            ankle_to_hip = (hip_pos - ankle_pos)/leg_len
+            timing = (self.model.data.time - self.lfoot_info['start_t'])%cycle_time/cycle_time
         else:
-            current_pos = np.array([self.model.data.xpos[7, 0], self.model.data.xpos[7, 2]])
-            foot_to_com = (com_xpos - current_pos)/body_height
-            timing = (self.model.data.time - self.rfoot_info['t_touch'])/cycle_time
+            ankle_pos = np.array([self.model.data.xanchor[8, 0], self.model.data.xanchor[8, 2]])
+            ankle_to_hip = (hip_pos - ankle_pos)/leg_len
+            timing = (self.model.data.time - self.rfoot_info['start_t'])%cycle_time/cycle_time
         index = int(timing*foot_traj.shape[0])
         if index >= foot_traj.shape[0]:
             index = foot_traj.shape[0] - 1
         foot_traj_pos = foot_traj[index]
-        reward = -np.linalg.norm(foot_to_com - foot_traj_pos)
-        return reward    
+        diff_vec = ankle_to_hip - foot_traj_pos
+        height_reward = 0
+        if hip_pos[1] < body_height[0]:
+            height_reward = (hip_pos[1] - body_height[0])**2
+        elif hip_pos[1] > body_height[1]:
+            height_reward = (hip_pos[1] - body_height[1])**2
+        #return -(diff_vec[0]**2 + diff_vec[1]**2*2 + height_reward*10)
+        return -height_reward-np.linalg.norm(diff_vec)
+        # return the difference in x and z axes as separate components
+        # return abs(diff_vec[0]), abs(diff_vec[1])    
     
     def compute_stance_reward(self, left, duration=0.5):
         reward = 0   
@@ -152,7 +141,11 @@ class Walker2dNewEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         return self._get_obs()
 
     def viewer_setup(self):
-        self.viewer.cam.trackbodyid = 2
-        self.viewer.cam.distance = self.model.stat.extent * 0.5
-        self.viewer.cam.lookat[2] += .8
+        #self.viewer.cam.trackbodyid = 2
+        #self.viewer.cam.distance = self.model.stat.extent * 0.5
+        #self.viewer.cam.lookat[2] += .8
+        self.viewer.cam.distance = 4.0
+        self.viewer.cam.lookat[0] = self.model.data.qpos[0, 0]
+        self.viewer.cam.lookat[1] = 0.0
+        self.viewer.cam.lookat[2] = 2.0
         self.viewer.cam.elevation = -20
