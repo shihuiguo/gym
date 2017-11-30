@@ -2,12 +2,17 @@ import numpy as np
 from gym import utils
 from gym.envs.mujoco import mujoco_env
 
-foot_traj_filepath = '/home/caffe/Documents/baselines/baselines/ddpg/data/walker2d_foot_traj_xz.txt'
-foot_traj = np.loadtxt(foot_traj_filepath)
-leg_len = 0.95
+joint_list_dic = {'knee':  [[1, 2, 3], [6, 7], [3, 4]], 
+                  'foot':  [[4, 5, 6], [7, 8], [4, 5]]} 
+                 # first element is the indices in the trajectory file
+                 # second element is the indices (parent, child) in the simulation model for the body parts on the right side
+                 # third element is the indices (parent, child) in the simulation model for the body parts on the left side
+traj_filepath = '/home/caffe/Documents/baselines/baselines/ddpg/data/walker2d_knee_foot_traj.txt'
+traj_data = np.loadtxt(traj_filepath)
+total_frames = traj_data.shape[0]
 body_height = [0.9, 1.2]
 cycle_time = 1.0
-speed = 2 # the average speed from the mocap data is 1.39
+speed = 1.4 # the average speed from the mocap data is 1.39
 
 class Walker2dNewEnv(mujoco_env.MujocoEnv, utils.EzPickle):
 
@@ -19,105 +24,67 @@ class Walker2dNewEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         posbefore = self.model.data.qpos[0, 0]
         self.do_simulation(a, self.frame_skip)
         posafter, height, ang = self.model.data.qpos[0:3, 0]    
-        lfoot_reward = self.update_foot_info(True)
-        rfoot_reward = self.update_foot_info(False)
         alive_bonus = 1.0
         #reward_vel = -((posafter - posbefore) / self.dt - speed)**2
         reward_vel = (posafter - posbefore)/self.dt
-        reward_alive = alive_bonus
-        reward_act = -1e-3 * np.square(a).sum()
-        reward_foot = lfoot_reward + rfoot_reward
-        reward = reward_vel + reward_alive + reward_act + reward_foot
+        #reward_vel = -abs(pos - self.model.data.time*speed)
+        reward_alive = alive_bonus        
+        reward_pos = self.compute_posture_reward()        
+        reward = reward_vel + reward_alive + reward_pos
         #print('rewards')
         #print(reward_vel)
         #print(reward_alive)
         #print(reward_act)
         #print(reward_foot)
-        done = not (height > 0.8 and height < 2.0 and
+        done = not (height > 0.8 and height < 1.4 and
                     ang > -1.0 and ang < 1.0)
             
         ob = self._get_obs()
-        return ob, reward, done, {'reward_foot':reward_foot}
+        return ob, reward, done, {'reward_pos':reward_pos}
     
-    def check_foot_strike(self, left, threshold=0.2):
-        if left:
-            zfoot_pos = self.model.data.xpos[4, 2]
-        else:
-            zfoot_pos = self.model.data.xpos[7, 2]        
-        if zfoot_pos < threshold:
-            return True
-        else:
-            return False
-    
-    def check_foot_liftoff(self, left, threshold=0.2):
-        if left:
-            zfoot_pos = self.model.data.xpos[4, 2]
-        else:
-            zfoot_pos = self.model.data.xpos[7, 2]        
-        if zfoot_pos > threshold:
-            return True
-        else:
-            return False        
-    
-    def init_foot_contact(self, left):
-        if left:
-            self.lfoot_info = {'start_t': self.model.data.time-cycle_time/4*3}
-        else:
-            self.rfoot_info = {'start_t': self.model.data.time-cycle_time/4}            
-    
-    def update_foot_info(self, left):
-        reward = 0
-        if left:
-            if hasattr(self, 'lfoot_info'):
-                reward = self.compute_foot_reward(left)
-            else:
-                self.init_foot_contact(left)
-        else:
-            if hasattr(self, 'rfoot_info'):
-                reward = self.compute_foot_reward(left)                                  
-            else:
-                self.init_foot_contact(left)
-        return reward
-    
+ 
+            
+    def compute_posture_reward(self):
+        timing = (self.model.data.time+cycle_time/4)%cycle_time/cycle_time
+        index = self.get_index(timing)
+        reward_height = self.compute_height_reward(index)
+        #reward_head = self.compute_head_reward()
+        reward_joints = 0
+        for joint in ['knee', 'foot']:
+            reward_L = self.compute_joint_reward(True, joint, index)
+            reward_R = self.compute_joint_reward(False, joint, index)
+            reward_joints = reward_joints + reward_L + reward_R
+        posture_reward = reward_height + reward_joints
+        return posture_reward
 
     
-    def compute_foot_reward(self, left, stride=0.6):
-        # compare the foot trajectory with respect to the desired foot trajectory
-        hip_pos = np.array([self.model.data.xanchor[2, 0], self.model.data.xanchor[2, 2]])            
-        if left:
-            ankle_pos = np.array([self.model.data.xanchor[5, 0], self.model.data.xpos[5, 2]])
-            ankle_to_hip = (hip_pos - ankle_pos)/leg_len
-            timing = (self.model.data.time - self.lfoot_info['start_t'])%cycle_time/cycle_time
+    def compute_height_reward(self, index):
+        target_height = traj_data[index, 0]
+        simula_height = self.model.data.xanchor[2, 2] 
+        reward_height = -(target_height - simula_height)**2
+        return reward_height
+
+    def compute_joint_reward(self, left, joint, index):
+        '''
+        joint: ['knee', 'foot']
+        '''
+        if left == False:
+            index = int(index + total_frames/2)%total_frames
+            side_index = 1 
         else:
-            ankle_pos = np.array([self.model.data.xanchor[8, 0], self.model.data.xanchor[8, 2]])
-            ankle_to_hip = (hip_pos - ankle_pos)/leg_len
-            timing = (self.model.data.time - self.rfoot_info['start_t'])%cycle_time/cycle_time
-        index = int(timing*foot_traj.shape[0])
-        if index >= foot_traj.shape[0]:
-            index = foot_traj.shape[0] - 1
-        foot_traj_pos = foot_traj[index]
-        diff_vec = ankle_to_hip - foot_traj_pos
-        height_reward = 0
-        if hip_pos[1] < body_height[0]:
-            height_reward = (hip_pos[1] - body_height[0])**2
-        elif hip_pos[1] > body_height[1]:
-            height_reward = (hip_pos[1] - body_height[1])**2
-        #return -(diff_vec[0]**2 + diff_vec[1]**2*2 + height_reward*10)
-        return -height_reward-np.linalg.norm(diff_vec)
-        # return the difference in x and z axes as separate components
-        # return abs(diff_vec[0]), abs(diff_vec[1])    
-    
-    def compute_stance_reward(self, left, duration=0.5):
-        reward = 0   
-        current_time = self.model.data.time
-        if left:
-            touch_time = self.lfoot_info['t_touch']
-        else:
-            touch_time = self.rfoot_info['t_touch']
-        if (current_time - touch_time) > duration:
-            reward = -((current_time - touch_time) - duration)**2
-        return reward
-                
+            side_index = 2 
+        target_joint_pos = traj_data[index, joint_list_dic[joint][0]]
+        simula_parent_joint_pos = self.model.data.xanchor[joint_list_dic[joint][side_index][0], :]
+        simula_child_joint_pos  = self.model.data.xanchor[joint_list_dic[joint][side_index][1], :]
+        simula_joint_vec = simula_parent_joint_pos - simula_child_joint_pos
+        simula_joint_pos = simula_joint_vec / np.linalg.norm(simula_joint_vec)
+        reward_joint_pos = -np.linalg.norm(target_joint_pos -simula_joint_pos)
+        return reward_joint_pos
+        
+
+    def get_index(self, timing):
+        index = int(timing*total_frames)
+        return index                
 
     def _get_obs(self):
         qpos = self.model.data.qpos
@@ -133,11 +100,6 @@ class Walker2dNewEnv(mujoco_env.MujocoEnv, utils.EzPickle):
             self.init_qpos + self.np_random.uniform(low=-.005, high=.005, size=self.model.nq),
             self.init_qvel + self.np_random.uniform(low=-.005, high=.005, size=self.model.nv)
         )
-        try:
-            delattr(self, 'lfoot_info')
-            delattr(self, 'rfoot_info')
-        except:
-            pass
         return self._get_obs()
 
     def viewer_setup(self):
