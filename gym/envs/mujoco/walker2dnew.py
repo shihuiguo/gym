@@ -25,12 +25,17 @@ class Walker2dNewEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         self.do_simulation(a, self.frame_skip)
         posafter, height, ang = self.model.data.qpos[0:3, 0]    
         alive_bonus = 1.0
-        #reward_vel = -((posafter - posbefore) / self.dt - speed)**2
-        reward_vel = (posafter - posbefore)/self.dt
-        #reward_vel = -abs(pos - self.model.data.time*speed)
+        vel = (posafter - posbefore)/self.dt
+        #if vel < 2.0 and vel > 1.0:
+        #    reward_vel = 1.0
+        #else:
+        #    reward_vel = 0.0
+        #reward_vel = 
+        reward_vel = vel
         reward_alive = alive_bonus        
         reward_pos = self.compute_posture_reward()        
-        reward = reward_vel + reward_alive + reward_pos
+        # reward_foot = self.compute_foot_reward()
+        reward = reward_vel + reward_alive #+ reward_pos
         #print('rewards')
         #print(reward_vel)
         #print(reward_alive)
@@ -57,11 +62,21 @@ class Walker2dNewEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         posture_reward = reward_height + reward_joints
         return posture_reward
 
+    def compute_foot_reward(self):
+        joint_pos = self.model.data.xanchor
+        geom_quat = self.model.data.geom_xmat
+        foot_reward_L = 0
+        foot_reward_R = 0
+        if joint_pos[5, 2] < 0.15:
+            foot_reward_L = min(geom_quat[4,0], 0)
+        if joint_pos[8, 2] < 0.15:
+            foot_reward_R = min(geom_quat[7, 0], 0)
+        return foot_reward_L + foot_reward_R
     
     def compute_height_reward(self, index):
         target_height = traj_data[index, 0]
         simula_height = self.model.data.xanchor[2, 2] 
-        reward_height = -(target_height - simula_height)**2
+        reward_height = -abs(target_height - simula_height)
         return reward_height
 
     def compute_joint_reward(self, left, joint, index):
@@ -87,13 +102,20 @@ class Walker2dNewEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         return index                
 
     def _get_obs(self):
-        qpos = self.model.data.qpos
+        data = self.model.data
+        #qpos = self.model.data.qpos
         #print("qpos")
         #print(qpos)
-        qvel = self.model.data.qvel
+        #qvel = self.model.data.qvel
         #print("qvel")
         #print(qvel)
-        return np.concatenate([qpos[1:], np.clip(qvel, -10, 10)]).ravel()
+        return np.concatenate([data.qpos[1:].flat, 
+                               np.clip(data.qvel.flat, -10, 10),
+                               data.cinert.flat,
+                               data.cvel.flat,
+                               data.qfrc_actuator.flat,
+                               data.cfrc_ext.flat])                              
+                              
 
     def reset_model(self):
         self.set_state(
