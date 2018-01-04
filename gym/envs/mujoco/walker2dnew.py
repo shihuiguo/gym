@@ -31,11 +31,13 @@ class Walker2dNewEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         #else:
         #    reward_vel = 0.0
         #reward_vel = 
-        reward_vel =  2*np.exp(-(vel - speed)**2/2)
+        reward_vel = vel
         reward_alive = alive_bonus        
+        reward_target_vel = np.exp(-(vel-speed)**2/2)
         reward_pos = self.compute_posture_reward()        
         # reward_foot = self.compute_foot_reward()
-        reward = reward_vel + reward_alive #+ reward_pos
+        # reward = reward_vel + reward_alive #+ reward_pos
+        reward = reward_target_vel + 0.5*reward_pos
         #print('rewards')
         #print(reward_vel)
         #print(reward_alive)
@@ -76,7 +78,7 @@ class Walker2dNewEnv(mujoco_env.MujocoEnv, utils.EzPickle):
     def compute_height_reward(self, index):
         target_height = traj_data[index, 0]
         simula_height = self.model.data.xanchor[2, 2] 
-        reward_height =  2*np.exp(-(target_height - simula_height)**2/2)        
+        reward_height = np.exp(-(target_height - simula_height)**2/2)
         return reward_height
 
     def compute_joint_reward(self, left, joint, index):
@@ -92,9 +94,9 @@ class Walker2dNewEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         simula_parent_joint_pos = self.model.data.xanchor[joint_list_dic[joint][side_index][0], :]
         simula_child_joint_pos  = self.model.data.xanchor[joint_list_dic[joint][side_index][1], :]
         simula_joint_vec = simula_parent_joint_pos - simula_child_joint_pos
-        simula_joint_pos = simula_joint_vec / np.linalg.norm(simula_joint_vec)
-        dist = np.linalg.norm(target_joint_pos -simula_joint_pos)
-        reward_joint_pos =  2*np.exp(-dist**2/2)
+        simula_joint_pos = simula_joint_vec / np.linalg.norm(simula_joint_vec)        
+        #reward_joint_pos = -np.linalg.norm(target_joint_pos -simula_joint_pos)
+        reward_joint_pos = np.exp(-np.linalg.norm(target_joint_pos -simula_joint_pos)/2)
         return reward_joint_pos
         
 
